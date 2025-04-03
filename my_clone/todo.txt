@@ -1,0 +1,2 @@
+In this folder I hope to add the outline of a chatbot for slack/whatsapp that is finetuned on some of my writing/projects/data
+It is a TODO for now but keep posted ✌️
