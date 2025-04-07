@@ -13,6 +13,7 @@ from pydub import AudioSegment
 from vertexai.generative_models import GenerativeModel, GenerationConfig
 import vertexai
 from dotenv import load_dotenv
+import openai
 # Load environment variables from .env file
 load_dotenv()
 
@@ -22,6 +23,7 @@ from elevenlabs import play
 
 load_dotenv()
 
+openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 client = ElevenLabs(
   api_key=os.getenv("ELEVENLABS_API_KEY"),
 )
@@ -51,7 +53,32 @@ def generate_story_with_vertex_ai(story_prompt):
     story_text = responses.candidates[0].content.parts[0].text
     return story_text
 
-text = generate_story_with_vertex_ai(prompt)
+
+
+def generate_story_with_openai(story_prompt):
+    # Set your OpenAI API key
+
+    # Call the OpenAI ChatCompletion API
+    response = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "user", "content": story_prompt}
+        ],
+        max_tokens=1500,
+        temperature=0.7,
+        top_p=0.95,
+        n=1,
+        stop=None
+    )
+
+    # Extract the generated story text
+    story_text = response.choices[0].message.content.strip()
+    return story_text
+
+
+text= generate_story_with_openai(prompt)
+
+#text = generate_story_with_vertex_ai(prompt) #vertex seems to not be working, check payments
 
 
 audio = client.text_to_speech.convert(
@@ -70,7 +97,7 @@ def download(audio, filename="output.mp3"):
 # Usage
 download(audio)
 
-#play(audio)
+# #play(audio)
 
 
 # def test_tts():

@@ -4,11 +4,12 @@ import json
 import shutil
 import re
 import requests
-import ElevenLabs
+from elevenlabs.client import ElevenLabs
 from google.cloud import texttospeech
 from pydub import AudioSegment
 from vertexai.generative_models import GenerativeModel, GenerationConfig
 import vertexai
+import openai
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -94,7 +95,7 @@ system_prompt = """you are an experienced podcast host...
 - Include filler words like äh to make the conversation more natural.
 """
 vertexai.init(project="upbeat-bolt-272721", location="australia-southeast1")
-
+openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Google TTS Client
 client = texttospeech.TextToSpeechClient()
 speaker_voice_map = {
@@ -103,13 +104,9 @@ speaker_voice_map = {
 }
 
 # Retrieve ElevenLabs API key from environment
-elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
-elevenlabs_url = "https://api.elevenlabs.io/v1/text-to-speech/ERL3svWBAQ18ByCZTr4k"
-elevenlabs_headers = {
-    "Accept": "audio/mpeg",
-    "Content-Type": "application/json",
-    "xi-api-key": elevenlabs_api_key
-}
+elevenlabs_client = ElevenLabs(
+  api_key=os.getenv("ELEVENLABS_API_KEY"),
+)
 
 # Google TTS function
 def synthesize_speech_google(text, speaker, index):
@@ -130,39 +127,40 @@ def synthesize_speech_google(text, speaker, index):
 
 # ElevenLabs TTS function
 def synthesize_speech_elevenlabs(text, speaker, index):
-    data = {
-        "text": text,
-        "model_id": "eleven_multilingual_v2",
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75
-        }
-    }
-    response = requests.post(elevenlabs_url, json=data, headers=elevenlabs_headers)
+    """
+    Synthesizes speech using ElevenLabs API.
+    """
+    # Set the voice ID based on the speaker
+    voice_id = "NOpBlnGInO9m6vDvFkFC"  # Default voice ID for ElevenLabs
+    audio = elevenlabs_client.text_to_speech.convert(
+        text=text,
+        voice_id=voice_id,
+        model_id="eleven_multilingual_v2",
+        output_format="mp3_44100_128",
+    )
     filename = f"audio-files/{index}_{speaker}.mp3"
     with open(filename, "wb") as out:
-        for chunk in response.iter_content(chunk_size=1024):
+        for chunk in audio:
             if chunk:
                 out.write(chunk)
                 
                 
                 
-def read_text_aloud_caesar(text, filename="output.mp3"):
+def read_text_aloud_caesar(text, filename="output.mp3"): #TODO: handle larger articles and prevent timeouts from happening
     """
     Reads any text (e.g. article or story) aloud using the ElevenLabs "Caesar" voice.
     """
-    data = {
-        "text": text,
-        "voice_id": "NOpBlnGInO9m6vDvFkFC",
-        "model_id": "eleven_multilingual_v2",
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75
-        }
-    }
-    response = requests.post(elevenlabs_url, json=data, headers=elevenlabs_headers)
+    voice_id = "NOpBlnGInO9m6vDvFkFC" 
+    audio = elevenlabs_client.text_to_speech.convert(
+            text=text,
+            voice_id=voice_id,
+            model_id="eleven_multilingual_v2",
+            output_format="mp3_44100_128",
+        )
+    # response = requests.post(elevenlabs_url, json=data, headers=elevenlabs_headers)
+    
     with open(filename, "wb") as out: 
-        for chunk in response.iter_content(chunk_size=1024):
+        for chunk in audio:
             if chunk:
                 out.write(chunk)
     return filename
@@ -246,7 +244,7 @@ with col2:
 with col3:
     read_story_btn = st.button("📚Read Me A Story 🎄")
 
-# 1) Generate Podcast
+# 1) Generate Podcast (TODO: only one not working at the moment!)
 if generate_podcast_btn:
     if not article:
         st.error("⛔ Please enter article content to generate a podcast. 🎁")
@@ -286,23 +284,43 @@ if read_article_btn:
             mime="audio/mp3"
         )
 
-def generate_story_with_vertex_ai(story_prompt):
-    model = GenerativeModel("gemini-2.5-pro-exp-03-25", system_instruction=[story_prompt])
+# def generate_story_with_vertex_ai(story_prompt):
+#     model = GenerativeModel("gemini-2.5-pro-exp-03-25", system_instruction=[story_prompt])
     
-    # Adjust the generation configuration as needed
-    story_generation_config = GenerationConfig(
-        max_output_tokens=65536,
-        temperature=0.7,
-        top_p=0.95,
-        response_mime_type="application/json",
-        response_schema={"type": "STRING"}
-    )
+#     # Adjust the generation configuration as needed
+#     story_generation_config = GenerationConfig(
+#         max_output_tokens=65536,
+#         temperature=0.7,
+#         top_p=0.95,
+#         response_mime_type="application/json",
+#         response_schema={"type": "STRING"}
+#     )
     
-    responses = model.generate_content([story_prompt], generation_config=story_generation_config, stream=False)
+#     responses = model.generate_content([story_prompt], generation_config=story_generation_config, stream=False)
     
 
-    story_text = responses.candidates[0].content.parts[0].text
+#     story_text = responses.candidates[0].content.parts[0].text
+#     return story_text
+def generate_story_with_openai(story_prompt):
+    # Set your OpenAI API key
+
+    # Call the OpenAI ChatCompletion API
+    response = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "user", "content": story_prompt}
+        ],
+        max_tokens=4000,
+        temperature=0.7,
+        top_p=0.95,
+        n=1,
+        stop=None
+    )
+
+    # Extract the generated story text
+    story_text = response.choices[0].message.content.strip()
     return story_text
+
 
 # 3) Read Me Story
 if read_story_btn:
@@ -321,7 +339,7 @@ if read_story_btn:
 
     
     st.info("🔊 Generating audio for the story with Caesar's voice...")
-    story_text = generate_story_with_vertex_ai(story_prompt)
+    story_text = generate_story_with_openai(story_prompt)
     st.text_area("Generated Story", story_text, height=300)
     story_audio = read_text_aloud_caesar(story_text, "story.mp3")
     st.audio(story_audio, format="audio/mp3")
@@ -331,3 +349,5 @@ if read_story_btn:
         file_name="story.mp3",
         mime="audio/mp3"
     )
+    
+# 4) new button for K to practice her Dutch (conversational agent)
