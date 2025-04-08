@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import json
 import shutil
@@ -17,8 +18,7 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
-
-# Streamlit configuration
+os.environ["PATH"] += os.pathsep + os.path.expanduser("~/bin")
 # Streamlit configuration
 st.set_page_config(page_title="You are my Roman Empire", layout="wide")
 st.markdown(
@@ -102,9 +102,12 @@ openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Google TTS Client
 client = texttospeech.TextToSpeechClient()
 speaker_voice_map = {
-    "Caesar": "ElevenLabs",
-    "David": "en-US-Journey-O"
+    "Caesar": "BD7hFRsDGBBZDZZhNQ9M",
+    "Grandpa Oxley": "NOpBlnGInO9m6vDvFkFC",
+    "Archer (British)": "L0Dsvb3SLTyegXwtm47J",
+    "Stuart (Australian)": "HDA9tsk27wYi3uq0fPcK",
 }
+voice_options = list(speaker_voice_map.keys())
 
 # Retrieve ElevenLabs API key from environment
 timeout_config = Timeout(180.0) 
@@ -155,18 +158,18 @@ def split_text(text, max_length=2500):
     without breaking sentences.
     """
     return textwrap.wrap(text, max_length, break_long_words=False, break_on_hyphens=False)       
-def read_text_aloud_caesar(text, filename="output.mp3", chunks=False, audio_folder="audio-files", cleanup=True): #TODO: handle larger articles and prevent timeouts from happening
+def read_text_aloud_caesar(text, filename="output.mp3", chunks=False, audio_folder="audio-files", cleanup=True, voice_name="Caesar"): #TODO: handle larger articles and prevent timeouts from happening
     """
     Reads any text (e.g. article or story) aloud using the ElevenLabs "Caesar" voice.
     """
-    voice_id = "NOpBlnGInO9m6vDvFkFC" 
-    if chunks:
+    #voice_id = "NOpBlnGInO9m6vDvFkFC" 
+    if chunks: #can delete this first part because can use convert_as_stream
         os.makedirs(audio_folder, exist_ok=True)
         text_chunks = split_text(text, max_length=2500)
         for i, chunk in enumerate(text_chunks):
             audio = elevenlabs_client.text_to_speech.convert_as_stream(
                 text=chunk,
-                voice_id=voice_id,
+                voice_id=speaker_voice_map.get(voice_name, "NOpBlnGInO9m6vDvFkFC"), #default to oxley
                 model_id="eleven_multilingual_v2",
                 output_format="mp3_44100_128",
             )
@@ -181,7 +184,7 @@ def read_text_aloud_caesar(text, filename="output.mp3", chunks=False, audio_fold
     else:
         audio = elevenlabs_client.text_to_speech.convert_as_stream(
                 text=text,
-                voice_id=voice_id,
+                voice_id=speaker_voice_map.get(voice_name, "NOpBlnGInO9m6vDvFkFC"),
                 model_id="eleven_multilingual_v2",
                 output_format="mp3_44100_128",
         )
@@ -216,14 +219,7 @@ def merge_audios(audio_folder, output_file):
         combined += audio
     combined.export(output_file, format="mp3")
 
-# Vertex AI configuration to generate the conversation
-generation_config = GenerationConfig(
-    max_output_tokens=8192,
-    temperature=1,
-    top_p=0.95,
-    response_mime_type="application/json",
-    response_schema={"type": "ARRAY", "items": {"type": "OBJECT", "properties": {"speaker": {"type": "STRING"}, "text": {"type": "STRING"}}}},
-)
+
 
 # Function to calculate costs based on token counts
 def calculate_cost(prompt_token_count, candidates_token_count):
@@ -259,17 +255,41 @@ def generate_audio(conversation):
 # Streamlit inputs and outputs
 article = st.text_area("🎁 Article Content 🎁", "Paste the article text here", height=300)
 # Use columns to place buttons side by side
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 # Button definitions in separate columns
 with col1:
-    generate_podcast_btn = st.button(" 🔄 Generate A Podcast ")
+    with st.form("generate_podcast_form"):
+        generate_podcast_btn = st.form_submit_button("🔄 Generate A Podcast")
 
 with col2:
-    read_article_btn = st.button("▶️ Read Me the Article 🎁")
+    with st.form("read_article_form"):
+        read_article_btn = st.form_submit_button("▶️ Read Me the Article 🎁")
+        selected_voice = st.selectbox("Voice:", voice_options)
 
 with col3:
-    read_story_btn = st.button("📚Read Me A Story 🎄")
+    with st.form("story_form"):
+
+        
+        read_story_btn = st.form_submit_button("📚 Read Me A Story 🎄")
+        selected_voice = st.selectbox("Voice:", voice_options)
+
+
+    
+with col4:
+    with st.form("practice_dutch_form"):
+        practice_dutch_btn = st.form_submit_button("Practice your Dutch 🇳🇱")
+        if practice_dutch_btn:
+            st.info("🇳🇱 Talk to Caesar and practice your Dutch!")
+            components.html(
+                """
+                    
+                <elevenlabs-convai agent-id="LxLNrURhKwzioyBbRZEx"></elevenlabs-convai>
+                <script src="https://elevenlabs.io/convai-widget/index.js" async type="text/javascript"></script>
+                """,
+                height=200,
+                width=383,
+            )
 
 # 1) Generate Podcast (TODO: only one not working at the moment!)
 if generate_podcast_btn:
@@ -303,10 +323,10 @@ if read_article_btn:
     if not article:
         st.error("⛔ Please enter article content to read it aloud.")
     else:
-        st.info("🔊 Generating audio for the article with Caesar's voice...")
+        st.info(f"🔊 Generating audio for the article with {selected_voice}'s voice...")
         # chunk_threshold = 2500  
         # use_chunks = len(article) > chunk_threshold
-        article_audio = read_text_aloud_caesar(article, "article.mp3")
+        article_audio = read_text_aloud_caesar(article, "article.mp3", voice_name=selected_voice)
         print(article_audio)
         st.audio(article_audio, format="audio/mp3")
         st.download_button(
@@ -316,23 +336,8 @@ if read_article_btn:
             mime="audio/mp3"
         )
 
-# def generate_story_with_vertex_ai(story_prompt):
-#     model = GenerativeModel("gemini-2.5-pro-exp-03-25", system_instruction=[story_prompt])
-    
-#     # Adjust the generation configuration as needed
-#     story_generation_config = GenerationConfig(
-#         max_output_tokens=65536,
-#         temperature=0.7,
-#         top_p=0.95,
-#         response_mime_type="application/json",
-#         response_schema={"type": "STRING"}
-#     )
-    
-#     responses = model.generate_content([story_prompt], generation_config=story_generation_config, stream=False)
-    
 
-#     story_text = responses.candidates[0].content.parts[0].text
-#     return story_text
+
 def generate_story_with_openai(story_prompt):
     # Set your OpenAI API key
 
@@ -354,26 +359,22 @@ def generate_story_with_openai(story_prompt):
     return story_text
 
 
+
 # 3) Read Me Story
 if read_story_btn:
-    # predefined_story = (
-    #     "Once upon a time in a snowy village, there lived a kind little girl named Kirsty. "
-    #     "She loved giving presents to children and spreading joy during the holiday season. "
-    #     "One magical Christmas Eve, he decided to deliver gifts to every child in the village. "
-    #     "With the help of his trusty reindeer, Nicholas flew across the sky, filling hearts "
-    #     "with wonder and happiness. From that day on, he became known as Santa Claus, a "
-    #     "symbol of love and generosity."
-    # )
+
     story_prompt = """
         Please generate an audio story. The narrator that will read out the story's name is Caesar. 
         The story should be a small rural village in England. Make it a goodnight story but for an older adult (25 years old). You may sprinkle a bit of magic in your story. 
         """
 
+    # Dropdown for voice options
+ 
     
-    st.info("🔊 Generating audio for the story with Caesar's voice...")
+    st.info(f"🔊 Generating audio for the story with {selected_voice}'s voice...")
     story_text = generate_story_with_openai(story_prompt)
     st.text_area("Generated Story", story_text, height=300)
-    story_audio = read_text_aloud_caesar(story_text, "story.mp3")
+    story_audio = read_text_aloud_caesar(story_text, "story.mp3", voice_name=selected_voice)  # Assuming read_text_aloud_caesar can handle different voices
     st.audio(story_audio, format="audio/mp3")
     st.download_button(
         "🎁 Download Story Audio 🎁",
@@ -383,3 +384,43 @@ if read_story_btn:
     )
     
 # 4) new button for K to practice her Dutch (conversational agent)
+
+
+
+### old code
+# def generate_story_with_vertex_ai(story_prompt):
+#     model = GenerativeModel("gemini-2.5-pro-exp-03-25", system_instruction=[story_prompt])
+    
+#     # Adjust the generation configuration as needed
+#     story_generation_config = GenerationConfig(
+#         max_output_tokens=65536,
+#         temperature=0.7,
+#         top_p=0.95,
+#         response_mime_type="application/json",
+#         response_schema={"type": "STRING"}
+#     )
+    
+#     responses = model.generate_content([story_prompt], generation_config=story_generation_config, stream=False)
+    
+
+#     story_text = responses.candidates[0].content.parts[0].text
+#     return story_text
+
+
+    # predefined_story = (
+    #     "Once upon a time in a snowy village, there lived a kind little girl named Kirsty. "
+    #     "She loved giving presents to children and spreading joy during the holiday season. "
+    #     "One magical Christmas Eve, he decided to deliver gifts to every child in the village. "
+    #     "With the help of his trusty reindeer, Nicholas flew across the sky, filling hearts "
+    #     "with wonder and happiness. From that day on, he became known as Santa Claus, a "
+    #     "symbol of love and generosity."
+    # )
+    
+    # Vertex AI configuration to generate the conversation
+generation_config = GenerationConfig(
+    max_output_tokens=8192,
+    temperature=1,
+    top_p=0.95,
+    response_mime_type="application/json",
+    response_schema={"type": "ARRAY", "items": {"type": "OBJECT", "properties": {"speaker": {"type": "STRING"}, "text": {"type": "STRING"}}}},
+)

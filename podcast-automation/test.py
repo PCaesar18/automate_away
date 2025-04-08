@@ -19,10 +19,14 @@ load_dotenv()
 
 from dotenv import load_dotenv
 from elevenlabs.client import ElevenLabs
-from elevenlabs import play
-
+from podcastfy.client import generate_podcast
+API_KEYS = {
+    "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
+    "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+    "ELEVENLABS_API_KEY": os.getenv("ELEVENLABS_API_KEY"),
+}
 load_dotenv()
-
+os.environ["PATH"] += os.pathsep + os.path.expanduser("~/bin")
 openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 client = ElevenLabs(
   api_key=os.getenv("ELEVENLABS_API_KEY"),
@@ -34,24 +38,39 @@ prompt =   (
        
     )
 
-def generate_story_with_vertex_ai(story_prompt):
-    vertexai.init(project="upbeat-bolt-272721", location="australia-southeast1")
-    model = GenerativeModel("gemini-1.5-flash-002", system_instruction=[story_prompt])
+conversation_config = {
+    "roles_person1": "History Ph.D.",
+    "roles_person2": "Creative Professor",
+    "podcast_name": "The History Podcast",
+    "podcast_tagline": "Because History is Everywhere",
+    "creativity": 1,
+    "user_instructions": "Speakers should often overlap in their sentences. The conversation should be about the relationship between History and life. Person2 should make connections with her own life!"
+}
+audio_file = generate_podcast(
+    urls=["https://en.wikipedia.org/wiki/History_of_the_United_Kingdom"],
+    llm_model_name= "gpt-4o",
+    tts_model="elevenlabs",
+    api_key_label="ELEVENLABS_API_KEY",
+    conversation_config=conversation_config)
+
+# def generate_story_with_vertex_ai(story_prompt):
+#     vertexai.init(project="upbeat-bolt-272721", location="australia-southeast1")
+#     model = GenerativeModel("gemini-1.5-flash-002", system_instruction=[story_prompt])
     
-    # Adjust the generation configuration as needed
-    story_generation_config = GenerationConfig(
-        max_output_tokens=65536,
-        temperature=0.7,
-        top_p=0.95,
-        response_mime_type="application/json",
-        response_schema={"type": "STRING"}
-    )
+#     # Adjust the generation configuration as needed
+#     story_generation_config = GenerationConfig(
+#         max_output_tokens=65536,
+#         temperature=0.7,
+#         top_p=0.95,
+#         response_mime_type="application/json",
+#         response_schema={"type": "STRING"}
+#     )
     
-    responses = model.generate_content([story_prompt], generation_config=story_generation_config, stream=False)
+#     responses = model.generate_content([story_prompt], generation_config=story_generation_config, stream=False)
     
 
-    story_text = responses.candidates[0].content.parts[0].text
-    return story_text
+#     story_text = responses.candidates[0].content.parts[0].text
+#     return story_text
 
 
 
@@ -81,21 +100,36 @@ text= generate_story_with_openai(prompt)
 #text = generate_story_with_vertex_ai(prompt) #vertex seems to not be working, check payments
 
 
-audio = client.text_to_speech.convert(
-    text=text,
-    voice_id="NOpBlnGInO9m6vDvFkFC",
-    model_id="eleven_multilingual_v2",
-    output_format="mp3_44100_128",
-)
-def download(audio, filename="output.mp3"):
+# audio = client.text_to_speech.convert(
+#     text=text,
+#     voice_id="NOpBlnGInO9m6vDvFkFC",
+#     model_id="eleven_multilingual_v2",
+#     output_format="mp3_44100_128",
+# )
+def download(audio, filename="test.mp3"):
     with open(filename, "wb") as out_file:
         # Iterate over the generator to write the audio content
         for chunk in audio:
             out_file.write(chunk)
     print(f"Audio content written to file '{filename}'")
 
-# Usage
-download(audio)
+# # Usage
+
+from IPython.display import Audio, display
+
+def embed_audio(audio_file):
+	"""
+	Embeds an audio file in the notebook, making it playable.
+
+	Args:
+		audio_file (str): Path to the audio file.
+	"""
+	try:
+		display(Audio(audio_file))
+		print(f"Audio player embedded for: {audio_file}")
+	except Exception as e:
+		print(f"Error embedding audio: {str(e)}")
+embed_audio(audio_file)
 
 # #play(audio)
 
