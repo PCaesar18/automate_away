@@ -7,6 +7,7 @@ import os
 import json
 import shutil
 import re
+import yaml
 import requests
 from google.cloud import texttospeech
 from pydub import AudioSegment
@@ -46,11 +47,18 @@ conversation_config = {
     "creativity": 1,
     "user_instructions": "Speakers should often overlap in their sentences. The conversation should be about the relationship between History and life. Person2 should make connections with her own life!"
 }
+
+def load_config(config_path="conversation_config.yaml"):
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
+
+conversation_config = load_config()
+#python -m podcastfy.client --tts-model elevenlabs --conversation-config conversation_config.yaml --url https://en.wikipedia.org/wiki/History_of_the_United_Kingdom --api-key-label OPENAI_API_KEY
 audio_file = generate_podcast(
     urls=["https://en.wikipedia.org/wiki/History_of_the_United_Kingdom"],
-    llm_model_name= "gpt-4o",
-    tts_model="elevenlabs",
-    api_key_label="ELEVENLABS_API_KEY",
+    tts_model='elevenlabs',
+    #llm_model_name="gpt-4o",
+    api_key_label="OPENAI_API_KEY",
     conversation_config=conversation_config)
 
 # def generate_story_with_vertex_ai(story_prompt):
