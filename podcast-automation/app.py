@@ -3,8 +3,11 @@ import os
 import json
 import shutil
 import re
+import textwrap
 import requests
 from elevenlabs.client import ElevenLabs
+from elevenlabs import save, stream
+from httpx import Timeout
 from google.cloud import texttospeech
 from pydub import AudioSegment
 from vertexai.generative_models import GenerativeModel, GenerationConfig
@@ -104,6 +107,7 @@ speaker_voice_map = {
 }
 
 # Retrieve ElevenLabs API key from environment
+timeout_config = Timeout(180.0) 
 elevenlabs_client = ElevenLabs(
   api_key=os.getenv("ELEVENLABS_API_KEY"),
 )
@@ -145,24 +149,46 @@ def synthesize_speech_elevenlabs(text, speaker, index):
                 out.write(chunk)
                 
                 
-                
-def read_text_aloud_caesar(text, filename="output.mp3"): #TODO: handle larger articles and prevent timeouts from happening
+def split_text(text, max_length=2500):
+    """
+    Splits the input text into chunks of `max_length` characters
+    without breaking sentences.
+    """
+    return textwrap.wrap(text, max_length, break_long_words=False, break_on_hyphens=False)       
+def read_text_aloud_caesar(text, filename="output.mp3", chunks=False, audio_folder="audio-files", cleanup=True): #TODO: handle larger articles and prevent timeouts from happening
     """
     Reads any text (e.g. article or story) aloud using the ElevenLabs "Caesar" voice.
     """
     voice_id = "NOpBlnGInO9m6vDvFkFC" 
-    audio = elevenlabs_client.text_to_speech.convert(
-            text=text,
-            voice_id=voice_id,
-            model_id="eleven_multilingual_v2",
-            output_format="mp3_44100_128",
+    if chunks:
+        os.makedirs(audio_folder, exist_ok=True)
+        text_chunks = split_text(text, max_length=2500)
+        for i, chunk in enumerate(text_chunks):
+            audio = elevenlabs_client.text_to_speech.convert_as_stream(
+                text=chunk,
+                voice_id=voice_id,
+                model_id="eleven_multilingual_v2",
+                output_format="mp3_44100_128",
+            )
+            chunk_filename = os.path.join(audio_folder, f"output_chunk_{i + 1}.mp3")
+            save(audio, chunk_filename)
+            print(f"✅ Saved chunk {i + 1} to {chunk_filename}")
+
+        # Merge all chunks after generation
+        merge_audios(audio_folder, filename)
+        if cleanup:
+            shutil.rmtree(audio_folder)
+    else:
+        audio = elevenlabs_client.text_to_speech.convert_as_stream(
+                text=text,
+                voice_id=voice_id,
+                model_id="eleven_multilingual_v2",
+                output_format="mp3_44100_128",
         )
-    # response = requests.post(elevenlabs_url, json=data, headers=elevenlabs_headers)
-    
-    with open(filename, "wb") as out: 
-        for chunk in audio:
-            if chunk:
-                out.write(chunk)
+        with open(filename, "wb") as out: 
+            for chunk in audio:
+                if isinstance(chunk, bytes):
+                    out.write(chunk)
     return filename
 
 # Function to synthesize speech based on the speaker
@@ -185,7 +211,8 @@ def merge_audios(audio_folder, output_file):
     )
     for filename in audio_files:
         audio_path = os.path.join(audio_folder, filename)
-        audio = AudioSegment.from_file(audio_path)
+        with open(audio_path, "rb") as f:
+            audio = AudioSegment.from_mp3(f)
         combined += audio
     combined.export(output_file, format="mp3")
 
@@ -268,12 +295,17 @@ if generate_podcast_btn:
             mime="audio/mp3"
         )
 
+
+
+
 # 2) Read Me the Article
 if read_article_btn:
     if not article:
         st.error("⛔ Please enter article content to read it aloud.")
     else:
         st.info("🔊 Generating audio for the article with Caesar's voice...")
+        # chunk_threshold = 2500  
+        # use_chunks = len(article) > chunk_threshold
         article_audio = read_text_aloud_caesar(article, "article.mp3")
         print(article_audio)
         st.audio(article_audio, format="audio/mp3")
